@@ -5,38 +5,37 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 )
 
 var (
-	auth_endpoint_url string
-	auth_client_id string
-	auth_client_secret string
-	auth_scope string
+	auth_endpoint_url    string
+	auth_client_id       string
+	auth_client_secret   string
+	auth_scope           string
 	proxy_downstream_url string
-	proxy_port string
-	access_token string
-	token_type string
-	token_refresh_time time.Time
-	api_key string
-	api_key_header string
+	proxy_port           string
+	access_token         string
+	token_type           string
+	token_refresh_time   time.Time
+	api_key              string
+	api_key_header       string
 )
 
-// Structure for storing results from a 
+// Structure for storing results from a
 type AuthReponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresIn int `json:"expires_in"`
-	TokenType string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+	TokenType   string `json:"token_type"`
 }
 
-// Proxies the incoming request to the downstream, adding Authorization 
+// Proxies the incoming request to the downstream, adding Authorization
 // header and optional API Key header
 func handleRequestAndRedirect(res http.ResponseWriter, req *http.Request) {
 	url, err := url.Parse(proxy_downstream_url)
@@ -52,7 +51,7 @@ func handleRequestAndRedirect(res http.ResponseWriter, req *http.Request) {
 	req.URL.Scheme = url.Scheme
 	req.Host = url.Host
 
-	req.Header.Set("Authorization", token_type + " " + access_token)
+	req.Header.Set("Authorization", token_type+" "+access_token)
 
 	if api_key != "" {
 		req.Header.Set(api_key_header, api_key)
@@ -63,32 +62,34 @@ func handleRequestAndRedirect(res http.ResponseWriter, req *http.Request) {
 }
 
 // Gets (or refreshes) the access token using a jittered backed-off retry
-func getOuath2AuthAccessToken(){
-	request_body := "grant_type=client_credentials&client_id=" + auth_client_id + "&client_secret=" + auth_client_secret
-	if auth_scope != "" {
-		request_body = request_body + "&scope=" + auth_scope
+func getOuath2AuthAccessToken() {
+	request_body := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {auth_client_id},
+		"client_secret": {auth_client_secret},
 	}
-
-	request_body_reader := strings.NewReader(request_body)
+	if auth_scope != "" {
+		request_body.Set("scope", auth_scope)
+	}
 
 	retry_number := -1
 
 	for {
 		retry_number++
-		
-		if retry_number > 5 { 
+
+		if retry_number > 5 {
 			log.Print("Failed to acquire access token; exiting")
 			break
 		} else if retry_number > 0 {
-			seconds_to_wait := retry_number * retry_number + 1
+			seconds_to_wait := retry_number*retry_number + 1
 			log.Printf("Failed to aquired token; awaiting retry #%v in %v seconds", retry_number, seconds_to_wait)
-			retry_time := time.Duration(seconds_to_wait) * time.Second 
+			retry_time := time.Duration(seconds_to_wait) * time.Second
 			time.Sleep(retry_time)
 			log.Printf("Retry #%v", retry_number)
 		}
 
 		log.Printf("Sending authentication request via POST to %s", auth_endpoint_url)
-		resp, err := http.Post(auth_endpoint_url, "application/x-www-form-urlencoded", request_body_reader)
+		resp, err := http.PostForm(auth_endpoint_url, request_body)
 
 		if err != nil {
 			log.Print(err)
@@ -107,7 +108,7 @@ func getOuath2AuthAccessToken(){
 			log.Print(err)
 			continue
 		}
-		
+
 		//TODO: Error handling on unmarshalling the JSON payload
 		auth_response := AuthReponse{}
 		err = json.Unmarshal(body, &auth_response)
@@ -123,8 +124,8 @@ func getOuath2AuthAccessToken(){
 
 		access_token = auth_response.AccessToken
 		token_type = auth_response.TokenType
-		expires := auth_response.ExpiresIn - ( 60 * 5 )
-		token_refresh_time = time.Now().UTC().Add(time.Second * time.Duration(expires))	
+		expires := auth_response.ExpiresIn - (60 * 5)
+		token_refresh_time = time.Now().UTC().Add(time.Second * time.Duration(expires))
 
 		log.Print("Access token updated")
 		log.Printf("Token refresh scheduled at %s", token_refresh_time)
@@ -141,7 +142,7 @@ func handleTokenRefresh() {
 			getOuath2AuthAccessToken()
 		}
 		time.Sleep(30 * time.Second)
-    }	
+	}
 }
 
 // Retrieves a named environment variable. validates that required
@@ -154,11 +155,11 @@ func getEnvironmentVariable(key string, required bool, secret bool, fallback str
 			log.Printf("%s=%s", key, value)
 		}
 		return value
-	} 
+	}
 
 	if required {
 		log.Fatalf("Environment variable %s must be supplied", key)
-	} 
+	}
 
 	if fallback != "" {
 		log.Printf("%s=%s (Default Value)", key, fallback)
@@ -177,7 +178,7 @@ func initVariables() {
 	api_key = getEnvironmentVariable("PROXY_API_KEY", false, true, "")
 	if api_key != "" {
 		api_key_header = getEnvironmentVariable("PROXY_API_KEY_HEADER", false, false, "x-api-key")
-	} 
+	}
 }
 
 // Main program entrypoint
