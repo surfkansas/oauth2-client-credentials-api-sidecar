@@ -96,7 +96,7 @@ func getOuath2AuthAccessToken() {
 			continue
 		}
 
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != 200 && resp.StatusCode != 201 {
 			log.Printf("Received non-200 status code: %s", resp.Status)
 			continue
 		}
